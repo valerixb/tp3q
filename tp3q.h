@@ -3,9 +3,9 @@
 
 #include <linux/ioctl.h>
 
-/* ----------------------------
- *     IP register offsets
- * ----------------------------
+/* ------------------------------------------
+ *     TPCMD MM2S FIFO register offsets
+ * ------------------------------------------
  */
 
 #define XLLF_ISR_OFFSET  0x00000000  /* Interrupt Status */
@@ -23,6 +23,24 @@
 #define XLLF_SRR_OFFSET  0x00000028  /* Local Link Reset */
 #define XLLF_TDR_OFFSET  0x0000002C  /* Transmit Destination */
 #define XLLF_RDR_OFFSET  0x00000030  /* Receive Destination */
+
+
+/* ------------------------------------------
+ *     UDP PKTZR register offsets
+ * ------------------------------------------
+ */
+
+#define PKTZR_STATUSW_OFFSET  0x00000000  /* Read only - 32 bitfields - unused*/
+#define PKTZR_CONTROLW_OFFSET 0x00000004  /* W(/R) - 32 bitfields - control word */
+#define PKTZR_SRC_IP_OFFSET   0x00000008  /* W(/R) - uint32 - Source IP address */
+
+
+/* ------------------------------------------
+ *     UDP PKTZR register bitmasks
+ * ------------------------------------------
+ */
+
+#define PKTZR_ENABLE_MASK     0x00000001
 
 
 /* ----------------------------
@@ -84,5 +102,17 @@ struct axis_fifo_kern_regInfo{
 #define AXIS_FIFO_GET_TX_BYTES_SENT _IOR(AXIS_FIFO_IOCTL_MAGIC, 11, uint32_t)
 #define AXIS_FIFO_GET_RX_PKTS_READ _IOR(AXIS_FIFO_IOCTL_MAGIC, 12, uint32_t)
 #define AXIS_FIFO_GET_RX_BYTES_READ _IOR(AXIS_FIFO_IOCTL_MAGIC, 13, uint32_t)
+
+
+/* ----------------------------
+ *      subsys identifiers
+ * ----------------------------
+ */
+
+#define TP3Q_TPCMD_SUBSYS     1
+#define TP3Q_PKTZR_SUBSYS     2
+#define TP3Q_STREAMGEN_SUBSYS 3
+
+
 
 #endif /* AXIS_FIFO_H */

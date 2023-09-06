@@ -9,7 +9,7 @@
  * See Xilinx PG080 document for IP details:
  * https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/AXI4-Stream-FIFO-LogiCORE-IP-Product-Guide
  * 
- * latest rev by valerix, sept 5 2023
+ * latest rev by valerix, sept 6 2023
  * 
  */
 
@@ -122,6 +122,10 @@ struct axis_fifo {
     //u64 pktzr_phys_baseaddr, pktzr_phys_end, pktzr_phys_regsize;
     struct resource pktzr_phys_mem; /* physical memory */
     void __iomem *pktzr_base_addr; /* kernel space memory */
+
+    // references to Stream Generator IP
+    void __iomem *streamgen_base_addr; /* kernel space memory */
+
 };
 
 /* ----------------------------
@@ -153,14 +157,32 @@ static ssize_t sysfs_write(struct device *dev, const char *buf,
 }
 
 static ssize_t sysfs_read(struct device *dev, char *buf,
-              unsigned int addr_offset)
+              int subsys_id, unsigned int addr_offset)
 {
     struct axis_fifo *fifo = dev_get_drvdata(dev);
+    void __iomem *subsys_base_addr;
     unsigned int read_val;
     unsigned int len;
     char tmp[32];
 
-    read_val = ioread32(fifo->base_addr + addr_offset);
+    switch(subsys_id)
+        {
+        case TP3Q_TPCMD_SUBSYS:
+            subsys_base_addr=fifo->base_addr;
+            break;
+
+        case TP3Q_PKTZR_SUBSYS:
+            subsys_base_addr=fifo->pktzr_base_addr;
+            break;
+
+        case TP3Q_STREAMGEN_SUBSYS:
+            subsys_base_addr=fifo->streamgen_base_addr;
+            break;
+
+        default:
+            subsys_base_addr=NULL;
+        }
+    read_val = ioread32(subsys_base_addr + addr_offset);
     len =  snprintf(tmp, sizeof(tmp), "0x%x\n", read_val);
     memcpy(buf, tmp, len);
 
@@ -226,7 +248,7 @@ static ssize_t isr_store(struct device *dev, struct device_attribute *attr,
 static ssize_t isr_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_ISR_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_ISR_OFFSET);
 }
 
 static DEVICE_ATTR_RW(isr);
@@ -240,7 +262,7 @@ static ssize_t ier_store(struct device *dev, struct device_attribute *attr,
 static ssize_t ier_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_IER_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_IER_OFFSET);
 }
 
 static DEVICE_ATTR_RW(ier);
@@ -256,7 +278,7 @@ static DEVICE_ATTR_WO(tdfr);
 static ssize_t tdfv_show(struct device *dev,
              struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_TDFV_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_TDFV_OFFSET);
 }
 
 static DEVICE_ATTR_RO(tdfv);
@@ -288,7 +310,7 @@ static DEVICE_ATTR_WO(rdfr);
 static ssize_t rdfo_show(struct device *dev,
              struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_RDFO_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_RDFO_OFFSET);
 }
 
 static DEVICE_ATTR_RO(rdfo);
@@ -296,7 +318,7 @@ static DEVICE_ATTR_RO(rdfo);
 static ssize_t rdfd_show(struct device *dev,
              struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_RDFD_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_RDFD_OFFSET);
 }
 
 static DEVICE_ATTR_RO(rdfd);
@@ -304,7 +326,7 @@ static DEVICE_ATTR_RO(rdfd);
 static ssize_t rlr_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_RLR_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_RLR_OFFSET);
 }
 
 static DEVICE_ATTR_RO(rlr);
@@ -328,7 +350,7 @@ static DEVICE_ATTR_WO(tdr);
 static ssize_t rdr_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, XLLF_RDR_OFFSET);
+    return sysfs_read(dev, buf, TP3Q_TPCMD_SUBSYS, XLLF_RDR_OFFSET);
 }
 
 static DEVICE_ATTR_RO(rdr);
@@ -445,15 +467,18 @@ static const struct attribute_group axis_fifo_attrs_group = {
 static ssize_t src_ip_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    //struct axis_fifo *fifo = dev_get_drvdata(dev);
-    //unsigned long tmp;
-    //int rc;
-    //
-    //rc = kstrtoul(buf, 0, &tmp);
-    //if (rc < 0)
-    //    return rc;
-    //
-    //fifo->tx_max_pkt_size = tmp;
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long tmp, tmp0, tmp1, tmp2, tmp3;
+    int rc;
+    
+    rc = sscanf(buf, "%d.%d.%d.%d", &tmp3, &tmp2, &tmp1, &tmp0);
+    if (rc < 4)
+        {
+        dev_err(fifo->dt_device, "Invalid Source IP format; use: xxx.xxx.xxx.xxx\n");
+        return -EINVAL;
+        }
+    tmp= ((tmp3 & 0xFF)<<24) | ((tmp2 & 0xFF)<<16) | ((tmp1 & 0xFF)<<8) | tmp0;
+    iowrite32(tmp, fifo->pktzr_base_addr + PKTZR_SRC_IP_OFFSET);
 
     return strlen(buf);
 }
@@ -461,14 +486,17 @@ static ssize_t src_ip_store(struct device *dev, struct device_attribute *attr,
 static ssize_t src_ip_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    //struct axis_fifo *fifo = dev_get_drvdata(dev);
-    //unsigned int read_val;
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
     unsigned int len;
     char tmp[32];
 
-    //read_val = fifo->tx_max_pkt_size;
-    //len =  snprintf(tmp, sizeof(tmp), "0x%x\n", read_val);
-    len =  snprintf(tmp, sizeof(tmp), "cicci\n");
+    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_SRC_IP_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d.%d.%d.%d\n", 
+            (read_val>>24)&0xFF,
+            (read_val>>16)&0xFF,
+            (read_val>>8)&0xFF,
+            read_val&0xFF);
     memcpy(buf, tmp, len);
     return len;
 }
@@ -1227,12 +1255,6 @@ static int axis_fifo_probe(struct platform_device *pdev)
     }
     dev_dbg(fifo->dt_device, "remapped config memory to %p\n", fifo->base_addr);
 
-    /* create unique device name */
-    //snprintf(device_name, sizeof(device_name), "%s_%pa",
-    //     DRIVER_NAME, &fifo->mem->start);
-    //
-    //dev_dbg(fifo->dt_device, "device name [%s]\n", device_name);
-
     fifo->tx_pkts = 0;
     fifo->rx_pkts = 0;
     fifo->rx_bytes = 0;
@@ -1432,12 +1454,6 @@ static int axis_fifo_probe(struct platform_device *pdev)
     }
 
     // get and map registers of UDP HW PKTZR
-    // of_property_read_reg is not available in kernel 5.15
-    //if(!of_property_read_reg(fifo->pktzr_node, 0, &fifo->pktzr_phys_baseaddr, &fifo->pktzr_phys_regsize)) {
-    //    dev_err(fifo->dt_device, "UDP HW Packetizer has invalid reg entry\n");
-    //    rc = -ENODEV;
-    //    goto err_unmap;
-    //}
     if(of_address_to_resource(fifo->pktzr_node, 0, &fifo->pktzr_phys_mem)) {
         dev_err(fifo->dt_device, "UDP HW Packetizer has invalid reg entry\n");
         rc = -ENODEV;
@@ -1445,19 +1461,6 @@ static int axis_fifo_probe(struct platform_device *pdev)
     }
 
     // request UDP PKTZR physical memory = registers
-
-    // if (!request_mem_region(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize,
-    //             DRIVER_NAME)) {
-    //     dev_err(fifo->dt_device,
-    //         "couldn't lock UDP PKTZR memory region at %pa\n",
-    //         &fifo->pktzr_phys_baseaddr);
-    //     rc = -EBUSY;
-    //     goto err_unmap;
-    // }
-    // fifo->pktzr_phys_end = fifo->pktzr_phys_baseaddr + fifo->pktzr_phys_regsize;
-    // dev_dbg(fifo->dt_device, "got UDP PKTZR config memory location [%pa - %pa]\n",
-    //     &fifo->pktzr_phys_baseaddr, &fifo->pktzr_phys_end);
-
     if (!request_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem),
                 DRIVER_NAME)) {
         dev_err(fifo->dt_device,
@@ -1471,14 +1474,6 @@ static int axis_fifo_probe(struct platform_device *pdev)
 
 
     /* map physical memory to kernel virtual address space */
-    // fifo->pktzr_base_addr = ioremap(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize);
-    // if (!fifo->pktzr_base_addr) {
-    //     dev_err(fifo->dt_device, "couldn't map UDP PKTZR physical memory\n");
-    //     rc = -ENOMEM;
-    //     goto err_pktzr_mem;
-    // }
-    // dev_dbg(fifo->dt_device, "remapped UDP PKTZR config memory to %p\n", fifo->pktzr_base_addr);
-
     fifo->pktzr_base_addr = ioremap(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
     if (!fifo->pktzr_base_addr) {
         dev_err(fifo->dt_device, "couldn't map UDP PKTZR physical memory\n");
@@ -1603,7 +1598,6 @@ static int axis_fifo_remove(struct platform_device *pdev)
     unregister_chrdev_region(fifo->devt, 1);
     free_irq(fifo->irq, fifo);
     iounmap(fifo->pktzr_base_addr);
-    //release_mem_region(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize);
     release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
     of_node_put(fifo->pktzr_node);
     iounmap(fifo->base_addr);
