@@ -140,18 +140,37 @@ static void reset_ip_core(struct axis_fifo *fifo);
  * ----------------------------
  */
 
-static ssize_t sysfs_write(struct device *dev, const char *buf,
-               size_t count, unsigned int addr_offset)
+static ssize_t sysfs_write(struct device *dev, const char *buf, size_t count,
+               int subsys_id, unsigned int addr_offset)
 {
     struct axis_fifo *fifo = dev_get_drvdata(dev);
+    void __iomem *subsys_base_addr;
     unsigned long tmp;
     int rc;
+
+    switch(subsys_id)
+        {
+        case TP3Q_TPCMD_SUBSYS:
+            subsys_base_addr=fifo->base_addr;
+            break;
+
+        case TP3Q_PKTZR_SUBSYS:
+            subsys_base_addr=fifo->pktzr_base_addr;
+            break;
+
+        case TP3Q_STREAMGEN_SUBSYS:
+            subsys_base_addr=fifo->streamgen_base_addr;
+            break;
+
+        default:
+            subsys_base_addr=NULL;
+        }
 
     rc = kstrtoul(buf, 0, &tmp);
     if (rc < 0)
         return rc;
 
-    iowrite32(tmp, fifo->base_addr + addr_offset);
+    iowrite32(tmp, subsys_base_addr + addr_offset);
 
     return count;
 }
@@ -242,7 +261,7 @@ static DEVICE_ATTR_RO(tx_pkts);
 static ssize_t isr_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_ISR_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_ISR_OFFSET);
 }
 
 static ssize_t isr_show(struct device *dev,
@@ -256,7 +275,7 @@ static DEVICE_ATTR_RW(isr);
 static ssize_t ier_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_IER_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_IER_OFFSET);
 }
 
 static ssize_t ier_show(struct device *dev,
@@ -270,7 +289,7 @@ static DEVICE_ATTR_RW(ier);
 static ssize_t tdfr_store(struct device *dev, struct device_attribute *attr,
               const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_TDFR_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_TDFR_OFFSET);
 }
 
 static DEVICE_ATTR_WO(tdfr);
@@ -286,7 +305,7 @@ static DEVICE_ATTR_RO(tdfv);
 static ssize_t tdfd_store(struct device *dev, struct device_attribute *attr,
               const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_TDFD_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_TDFD_OFFSET);
 }
 
 static DEVICE_ATTR_WO(tdfd);
@@ -294,7 +313,7 @@ static DEVICE_ATTR_WO(tdfd);
 static ssize_t tlr_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_TLR_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_TLR_OFFSET);
 }
 
 static DEVICE_ATTR_WO(tlr);
@@ -302,7 +321,7 @@ static DEVICE_ATTR_WO(tlr);
 static ssize_t rdfr_store(struct device *dev, struct device_attribute *attr,
               const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_RDFR_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_RDFR_OFFSET);
 }
 
 static DEVICE_ATTR_WO(rdfr);
@@ -334,7 +353,7 @@ static DEVICE_ATTR_RO(rlr);
 static ssize_t srr_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_SRR_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_SRR_OFFSET);
 }
 
 static DEVICE_ATTR_WO(srr);
@@ -342,7 +361,7 @@ static DEVICE_ATTR_WO(srr);
 static ssize_t tdr_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    return sysfs_write(dev, buf, count, XLLF_TDR_OFFSET);
+    return sysfs_write(dev, buf, count, TP3Q_TPCMD_SUBSYS, XLLF_TDR_OFFSET);
 }
 
 static DEVICE_ATTR_WO(tdr);
@@ -464,6 +483,71 @@ static const struct attribute_group axis_fifo_attrs_group = {
  * ------------------------------------
  */
 
+static ssize_t statusword_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_STATUSW_OFFSET);
+}
+
+static DEVICE_ATTR_RO(statusword);
+
+//--------------
+
+static ssize_t controlword_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET);
+}
+
+static ssize_t controlword_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET);
+}
+
+static DEVICE_ATTR_RW(controlword);
+
+//--------------
+
+static ssize_t enabled_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long tmp, regsave;
+    int rc;
+
+    regsave=ioread32(fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
+    rc = kstrtoul(buf, 0, &tmp);
+    if (rc < 0)
+        return rc;
+
+    if(tmp!=0)
+        iowrite32(regsave | PKTZR_ENABLE_MASK, fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
+    else
+        iowrite32(regsave & ~PKTZR_ENABLE_MASK, fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
+
+    return strlen(buf);
+}
+
+static ssize_t enabled_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len, enabled;
+    char tmp[32];
+
+    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
+    enabled=!!(read_val&PKTZR_ENABLE_MASK);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n", enabled);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(enabled);
+
+//--------------
+
 static ssize_t src_ip_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
@@ -471,7 +555,7 @@ static ssize_t src_ip_store(struct device *dev, struct device_attribute *attr,
     unsigned long tmp, tmp0, tmp1, tmp2, tmp3;
     int rc;
     
-    rc = sscanf(buf, "%d.%d.%d.%d", &tmp3, &tmp2, &tmp1, &tmp0);
+    rc = sscanf(buf, "%lu.%lu.%lu.%lu", &tmp3, &tmp2, &tmp1, &tmp0);
     if (rc < 4)
         {
         dev_err(fifo->dt_device, "Invalid Source IP format; use: xxx.xxx.xxx.xxx\n");
@@ -503,8 +587,224 @@ static ssize_t src_ip_show(struct device *dev,
 
 static DEVICE_ATTR_RW(src_ip);
 
+//--------------
+
+static ssize_t src_mac_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long mac_lo, mac_hi, mac0, mac1, mac2, mac3, mac4, mac5;
+    int rc;
+    
+    rc = sscanf(buf, "%lx:%lx:%lx:%lx:%lx:%lx", &mac5, &mac4, &mac3, &mac2, &mac1, &mac0);
+    if (rc < 6)
+        {
+        dev_err(fifo->dt_device, "Invalid Source MAC format; use hex numbers with colons: xx:xx:xx:xx:xx:xx\n");
+        return -EINVAL;
+        }
+    mac_hi= ((mac5 & 0xFF)<<8) | mac4;
+    mac_lo= ((mac3 & 0xFF)<<24) | ((mac2 & 0xFF)<<16) | ((mac1 & 0xFF)<<8) | mac0;
+    iowrite32(mac_hi, fifo->pktzr_base_addr + PKTZR_SRC_MAC_HI_OFFSET);
+    iowrite32(mac_lo, fifo->pktzr_base_addr + PKTZR_SRC_MAC_LO_OFFSET);
+
+    return strlen(buf);
+}
+
+static ssize_t src_mac_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int mac_lo, mac_hi;
+    unsigned int len;
+    char tmp[32];
+
+    mac_lo = ioread32(fifo->pktzr_base_addr + PKTZR_SRC_MAC_LO_OFFSET);
+    mac_hi = ioread32(fifo->pktzr_base_addr + PKTZR_SRC_MAC_HI_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%02X:%02X:%02X:%02X:%02X:%02X\n", 
+            (mac_hi>>8)&0xFF,
+            mac_hi&0xFF,
+            (mac_lo>>24)&0xFF,
+            (mac_lo>>16)&0xFF,
+            (mac_lo>>8)&0xFF,
+            mac_lo&0xFF);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(src_mac);
+
+//--------------
+
+static ssize_t src_udp_port_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_PKTZR_SUBSYS, PKTZR_SRC_UDP_PORT_OFFSET);
+}
+
+static ssize_t src_udp_port_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_SRC_UDP_PORT_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(src_udp_port);
+
+//--------------
+
+static ssize_t dest_ip_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long tmp, tmp0, tmp1, tmp2, tmp3;
+    int rc;
+    
+    rc = sscanf(buf, "%lu.%lu.%lu.%lu", &tmp3, &tmp2, &tmp1, &tmp0);
+    if (rc < 4)
+        {
+        dev_err(fifo->dt_device, "Invalid Destination IP format; use: xxx.xxx.xxx.xxx\n");
+        return -EINVAL;
+        }
+    tmp= ((tmp3 & 0xFF)<<24) | ((tmp2 & 0xFF)<<16) | ((tmp1 & 0xFF)<<8) | tmp0;
+    iowrite32(tmp, fifo->pktzr_base_addr + PKTZR_DEST_IP_OFFSET);
+
+    return strlen(buf);
+}
+
+static ssize_t dest_ip_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_DEST_IP_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d.%d.%d.%d\n", 
+            (read_val>>24)&0xFF,
+            (read_val>>16)&0xFF,
+            (read_val>>8)&0xFF,
+            read_val&0xFF);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(dest_ip);
+
+//--------------
+
+static ssize_t dest_mac_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long mac_lo, mac_hi, mac0, mac1, mac2, mac3, mac4, mac5;
+    int rc;
+    
+    rc = sscanf(buf, "%lx:%lx:%lx:%lx:%lx:%lx", &mac5, &mac4, &mac3, &mac2, &mac1, &mac0);
+    if (rc < 6)
+        {
+        dev_err(fifo->dt_device, "Invalid Destination MAC format; use hex numbers with colons: xx:xx:xx:xx:xx:xx\n");
+        return -EINVAL;
+        }
+    mac_hi= ((mac5 & 0xFF)<<8) | mac4;
+    mac_lo= ((mac3 & 0xFF)<<24) | ((mac2 & 0xFF)<<16) | ((mac1 & 0xFF)<<8) | mac0;
+    iowrite32(mac_hi, fifo->pktzr_base_addr + PKTZR_DEST_MAC_HI_OFFSET);
+    iowrite32(mac_lo, fifo->pktzr_base_addr + PKTZR_DEST_MAC_LO_OFFSET);
+
+    return strlen(buf);
+}
+
+static ssize_t dest_mac_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int mac_lo, mac_hi;
+    unsigned int len;
+    char tmp[32];
+
+    mac_lo = ioread32(fifo->pktzr_base_addr + PKTZR_DEST_MAC_LO_OFFSET);
+    mac_hi = ioread32(fifo->pktzr_base_addr + PKTZR_DEST_MAC_HI_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%02X:%02X:%02X:%02X:%02X:%02X\n", 
+            (mac_hi>>8)&0xFF,
+            mac_hi&0xFF,
+            (mac_lo>>24)&0xFF,
+            (mac_lo>>16)&0xFF,
+            (mac_lo>>8)&0xFF,
+            mac_lo&0xFF);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(dest_mac);
+
+//--------------
+
+static ssize_t dest_udp_port_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_PKTZR_SUBSYS, PKTZR_DEST_UDP_PORT_OFFSET);
+}
+
+static ssize_t dest_udp_port_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_DEST_UDP_PORT_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(dest_udp_port);
+
+//--------------
+
+static ssize_t watchdog_timeout_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_PKTZR_SUBSYS, PKTZR_WDOG_TIMEOUT_OFFSET);
+}
+
+static ssize_t watchdog_timeout_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_WDOG_TIMEOUT_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(watchdog_timeout);
+
+//--------------
+
 static struct attribute *pktzr_attrs[] = {
+    &dev_attr_statusword.attr,
+    &dev_attr_controlword.attr,
+    &dev_attr_enabled.attr,
     &dev_attr_src_ip.attr,
+    &dev_attr_src_mac.attr,
+    &dev_attr_src_udp_port.attr,
+    &dev_attr_dest_ip.attr,
+    &dev_attr_dest_mac.attr,
+    &dev_attr_dest_udp_port.attr,
+    &dev_attr_watchdog_timeout.attr,
     NULL,
 };
 

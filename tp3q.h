@@ -30,9 +30,17 @@
  * ------------------------------------------
  */
 
-#define PKTZR_STATUSW_OFFSET  0x00000000  /* Read only - 32 bitfields - unused*/
-#define PKTZR_CONTROLW_OFFSET 0x00000004  /* W(/R) - 32 bitfields - control word */
-#define PKTZR_SRC_IP_OFFSET   0x00000008  /* W(/R) - uint32 - Source IP address */
+#define PKTZR_STATUSW_OFFSET       0x00000000  /* Read only - 32 bitfields - unused*/
+#define PKTZR_CONTROLW_OFFSET      0x00000004  /* W(/R) - 32 bitfields - control word */
+#define PKTZR_SRC_IP_OFFSET        0x00000008  /* W(/R) - uint32 - Source IP address */
+#define PKTZR_SRC_MAC_LO_OFFSET    0x0000000C  /* W(/R) - uint32 - 32 LSBs of Source MAC */
+#define PKTZR_SRC_MAC_HI_OFFSET    0x00000010  /* W(/R) - uint16 - 16 MSBs of Source MAC */
+#define PKTZR_SRC_UDP_PORT_OFFSET  0x00000014  /* W(/R) - uint32 - Source UDP port # */
+#define PKTZR_DEST_IP_OFFSET       0x00000018  /* W(/R) - uint32 - Destination IP address */
+#define PKTZR_DEST_MAC_LO_OFFSET   0x0000001C  /* W(/R) - uint32 - 32 LSBs of Destination MAC */
+#define PKTZR_DEST_MAC_HI_OFFSET   0x00000020  /* W(/R) - uint16 - 16 MSBs of Destination MAC */
+#define PKTZR_DEST_UDP_PORT_OFFSET 0x00000024  /* W(/R) - uint32 - Destination UDP port # */
+#define PKTZR_WDOG_TIMEOUT_OFFSET  0x00000028  /* W(/R) - uint32 - Watchdog timeout in 156.25 MHz clock ticks */
 
 
 /* ------------------------------------------
@@ -40,7 +48,7 @@
  * ------------------------------------------
  */
 
-#define PKTZR_ENABLE_MASK     0x00000001
+#define PKTZR_ENABLE_MASK     0x00000001ul
 
 
 /* ----------------------------
