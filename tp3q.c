@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Xilinx AXIS FIFO: interface to the Xilinx AXI-Stream FIFO IP core
+ * MaxIV Laboratory - Lund University
+ * device driver for quad Timepix3 system
+ * 
+ * based on Jacob Feder's driver for Xilinx AXI-Stream FIFO IP core
+ * https://github.com/jacobfeder/axisfifo
  *
- * Copyright (C) 2018 Jacob Feder
- *
- * Authors:  Jacob Feder <jacobsfeder@gmail.com>
- *
- * See Xilinx PG080 document for IP details
+ * See Xilinx PG080 document for IP details:
+ * https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/AXI4-Stream-FIFO-LogiCORE-IP-Product-Guide
+ * 
+ * latest rev by valerix, sept 5 2023
+ * 
  */
 
 /* ----------------------------
@@ -36,23 +40,27 @@
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
 
-#include "axis-fifo.h"
+#include "tp3q.h"
+
 /* ----------------------------
  *       driver parameters
  * ----------------------------
  */
 
-#define DRIVER_NAME "axis_fifo"
+#define DRIVER_NAME "tp3q"
 
-#define READ_BUF_SIZE 128U /* read buffer length in words */
-#define WRITE_BUF_SIZE 128U /* write buffer length in words */
+/* length in (32-bit) words of the intermediate buffers for data copying between
+*  user space and kernel space ; it does not need to be = FIFO depth
+*/
+#define READ_BUF_SIZE 128U
+#define WRITE_BUF_SIZE 128U
 
 /* ----------------------------
  *           globals
  * ----------------------------
  */
 
-static struct class *axis_fifo_driver_class; /* char device class */
+static struct class *tp3q_driver_class; /* char device class */
 
 static int read_timeout = 1000; /* ms to wait before read() times out */
 static int write_timeout = 1000; /* ms to wait before write() times out */
@@ -97,7 +105,7 @@ struct axis_fifo {
     int has_tx_fifo; /* whether the IP has the tx fifo enabled */
     int has_tkeep; /* whether the IP has TKEEP enabled or not */
 
-    wait_queue_head_t read_queue; /* wait queue for asynchronos read */
+    wait_queue_head_t read_queue; /* wait queue for asynchronous read */
     spinlock_t read_queue_lock; /* lock for reading waitqueue */
     wait_queue_head_t write_queue; /* wait queue for asynchronos write */
     spinlock_t write_queue_lock; /* lock for writing waitqueue */
@@ -108,6 +116,12 @@ struct axis_fifo {
     struct device *device; /* device associated with char_device */
     dev_t devt; /* our char device number */
     struct cdev char_device; /* our char device */
+
+    // references to UDP hardware packetizer IP
+    struct device_node *pktzr_node;
+    //u64 pktzr_phys_baseaddr, pktzr_phys_end, pktzr_phys_regsize;
+    struct resource pktzr_phys_mem; /* physical memory */
+    void __iomem *pktzr_base_addr; /* kernel space memory */
 };
 
 /* ----------------------------
@@ -418,9 +432,67 @@ static struct attribute *axis_fifo_attrs[] = {
 };
 
 static const struct attribute_group axis_fifo_attrs_group = {
-    .name = "ip_registers",
+    .name = "tpcmd_registers",
     .attrs = axis_fifo_attrs,
 };
+
+
+/* ------------------------------------
+ *     sysfs entries for UDP PKTZR
+ * ------------------------------------
+ */
+
+static ssize_t src_ip_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    //struct axis_fifo *fifo = dev_get_drvdata(dev);
+    //unsigned long tmp;
+    //int rc;
+    //
+    //rc = kstrtoul(buf, 0, &tmp);
+    //if (rc < 0)
+    //    return rc;
+    //
+    //fifo->tx_max_pkt_size = tmp;
+
+    return strlen(buf);
+}
+
+static ssize_t src_ip_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    //struct axis_fifo *fifo = dev_get_drvdata(dev);
+    //unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    //read_val = fifo->tx_max_pkt_size;
+    //len =  snprintf(tmp, sizeof(tmp), "0x%x\n", read_val);
+    len =  snprintf(tmp, sizeof(tmp), "cicci\n");
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(src_ip);
+
+static struct attribute *pktzr_attrs[] = {
+    &dev_attr_src_ip.attr,
+    NULL,
+};
+
+
+static const struct attribute_group udp_pktzr_attrs_group = {
+    .name = "pktzr_registers",
+    .attrs = pktzr_attrs,
+};
+
+
+static const struct of_device_id udp_hw_pktzr_of_match[] = {
+    { .compatible = "xlnx,UDPpacketizer-1.0", },
+    {},
+};
+
+
 
 /* ----------------------------
  *        implementation
@@ -614,7 +686,7 @@ static ssize_t axis_fifo_write(struct file *f, const char __user *buf,
 
     if (!fifo->has_tkeep && len % sizeof(u32)) {
         dev_err(fifo->dt_device,
-            "tried to send a packet that isn't word-aligned\n");
+            "tried to send a non-word-aligned packet with tkeep disabled in the IP\n");
         return -EINVAL;
     }
 
@@ -1142,7 +1214,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
         rc = -EBUSY;
         goto err_initial;
     }
-    dev_dbg(fifo->dt_device, "got memory location [0x%pa - 0x%pa]\n",
+    dev_dbg(fifo->dt_device, "got config memory location [%pa - %pa]\n",
         &fifo->mem->start, &fifo->mem->end);
     fifo->fpga_addr = fifo->mem->start;
 
@@ -1153,13 +1225,13 @@ static int axis_fifo_probe(struct platform_device *pdev)
         rc = -ENOMEM;
         goto err_mem;
     }
-    dev_dbg(fifo->dt_device, "remapped memory to 0x%p\n", fifo->base_addr);
+    dev_dbg(fifo->dt_device, "remapped config memory to %p\n", fifo->base_addr);
 
     /* create unique device name */
-    snprintf(device_name, sizeof(device_name), "%s_%pa",
-         DRIVER_NAME, &fifo->mem->start);
-
-    dev_dbg(fifo->dt_device, "device name [%s]\n", device_name);
+    //snprintf(device_name, sizeof(device_name), "%s_%pa",
+    //     DRIVER_NAME, &fifo->mem->start);
+    //
+    //dev_dbg(fifo->dt_device, "device name [%s]\n", device_name);
 
     fifo->tx_pkts = 0;
     fifo->rx_pkts = 0;
@@ -1281,11 +1353,11 @@ static int axis_fifo_probe(struct platform_device *pdev)
         rc = -EIO;
         goto err_unmap;
     }
-    if (has_tdest) {
-        dev_err(fifo->dt_device, "tdest not supported\n");
-        rc = -EIO;
-        goto err_unmap;
-    }
+    // if (has_tdest) {
+    //     dev_err(fifo->dt_device, "tdest not supported\n");
+    //     rc = -EIO;
+    //     goto err_unmap;
+    // }
     if (has_tid) {
         dev_err(fifo->dt_device, "tid not supported\n");
         rc = -EIO;
@@ -1339,6 +1411,83 @@ static int axis_fifo_probe(struct platform_device *pdev)
 
     reset_ip_core(fifo);
 
+    /* --------------------------------------
+     *   get references to UDP HW Packetizer
+     * --------------------------------------
+    */
+    
+    // get node of UDP HW packetizer IP in devicetree
+    fifo->pktzr_node = of_parse_phandle(fifo->dt_device->of_node,"xlnx,pktzr-handle",0);
+    if (!fifo->pktzr_node) {
+        dev_err(fifo->dt_device, "UDP HW Packetizer not found\n");
+        rc = -ENODEV;
+        goto err_unmap;
+    }
+    // check that the node we found is actually a HW PKTZR
+    if(!of_match_node(udp_hw_pktzr_of_match,fifo->pktzr_node)) {
+        of_node_put(fifo->pktzr_node);
+        dev_err(fifo->dt_device, "UDP HW Packetizer has wrong signature\n");
+        rc = -ENODEV;
+        goto err_unmap;
+    }
+
+    // get and map registers of UDP HW PKTZR
+    // of_property_read_reg is not available in kernel 5.15
+    //if(!of_property_read_reg(fifo->pktzr_node, 0, &fifo->pktzr_phys_baseaddr, &fifo->pktzr_phys_regsize)) {
+    //    dev_err(fifo->dt_device, "UDP HW Packetizer has invalid reg entry\n");
+    //    rc = -ENODEV;
+    //    goto err_unmap;
+    //}
+    if(of_address_to_resource(fifo->pktzr_node, 0, &fifo->pktzr_phys_mem)) {
+        dev_err(fifo->dt_device, "UDP HW Packetizer has invalid reg entry\n");
+        rc = -ENODEV;
+        goto err_unmap;
+    }
+
+    // request UDP PKTZR physical memory = registers
+
+    // if (!request_mem_region(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize,
+    //             DRIVER_NAME)) {
+    //     dev_err(fifo->dt_device,
+    //         "couldn't lock UDP PKTZR memory region at %pa\n",
+    //         &fifo->pktzr_phys_baseaddr);
+    //     rc = -EBUSY;
+    //     goto err_unmap;
+    // }
+    // fifo->pktzr_phys_end = fifo->pktzr_phys_baseaddr + fifo->pktzr_phys_regsize;
+    // dev_dbg(fifo->dt_device, "got UDP PKTZR config memory location [%pa - %pa]\n",
+    //     &fifo->pktzr_phys_baseaddr, &fifo->pktzr_phys_end);
+
+    if (!request_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem),
+                DRIVER_NAME)) {
+        dev_err(fifo->dt_device,
+            "couldn't lock memory region at 0x%pa\n",
+            &fifo->pktzr_phys_mem.start);
+        rc = -EBUSY;
+        goto err_unmap;
+    }
+    dev_dbg(fifo->dt_device, "got UDP PKTZR config memory location [%pa - %pa]\n",
+        &fifo->pktzr_phys_mem.start, &fifo->pktzr_phys_mem.end);
+
+
+    /* map physical memory to kernel virtual address space */
+    // fifo->pktzr_base_addr = ioremap(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize);
+    // if (!fifo->pktzr_base_addr) {
+    //     dev_err(fifo->dt_device, "couldn't map UDP PKTZR physical memory\n");
+    //     rc = -ENOMEM;
+    //     goto err_pktzr_mem;
+    // }
+    // dev_dbg(fifo->dt_device, "remapped UDP PKTZR config memory to %p\n", fifo->pktzr_base_addr);
+
+    fifo->pktzr_base_addr = ioremap(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
+    if (!fifo->pktzr_base_addr) {
+        dev_err(fifo->dt_device, "couldn't map UDP PKTZR physical memory\n");
+        rc = -ENOMEM;
+        goto err_pktzr_mem;
+    }
+    dev_dbg(fifo->dt_device, "remapped UDP PKTZR config memory to %p\n", fifo->pktzr_base_addr);
+
+
     /* ----------------------------
      *    init device interrupts
      * ----------------------------
@@ -1351,7 +1500,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
             dev_err(fifo->dt_device, "no IRQ found for 0x%pa (error %i)\n",
                 &fifo->mem->start, irq);
         rc = irq;
-        goto err_unmap;
+        goto err_pktzr_unmap;
     }
 
     /* request IRQ */
@@ -1360,7 +1509,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
     if (rc) {
         dev_err(fifo->dt_device, "couldn't allocate interrupt %i\n",
             fifo->irq);
-        goto err_unmap;
+        goto err_pktzr_unmap;
     }
 
     /* ----------------------------
@@ -1375,8 +1524,14 @@ static int axis_fifo_probe(struct platform_device *pdev)
     dev_dbg(fifo->dt_device, "allocated device number major %i minor %i\n",
         MAJOR(fifo->devt), MINOR(fifo->devt));
 
+    /* create unique device name */
+    snprintf(device_name, sizeof(device_name), "%s_%d",
+         DRIVER_NAME, MINOR(fifo->devt));
+
+    dev_dbg(fifo->dt_device, "device name [%s]\n", device_name);
+
     /* create driver file */
-    fifo->device = device_create(axis_fifo_driver_class, NULL, fifo->devt,
+    fifo->device = device_create(tp3q_driver_class, NULL, fifo->devt,
                      NULL, device_name);
     if (IS_ERR(fifo->device)) {
         dev_err(fifo->dt_device,
@@ -1401,7 +1556,14 @@ static int axis_fifo_probe(struct platform_device *pdev)
         goto err_cdev;
     }
 
-    dev_info(fifo->dt_device, "axis-fifo created at %pa mapped to 0x%pa, irq=%i, major=%i, minor=%i\n",
+    /* create UDP PKTZR sysfs entries */
+    rc = sysfs_create_group(&fifo->device->kobj, &udp_pktzr_attrs_group);
+    if (rc < 0) {
+        dev_err(fifo->dt_device, "couldn't register UDP PKTZR sysfs group\n");
+        goto err_cdev;
+    }
+
+    dev_info(fifo->dt_device, "axis-fifo created at %pa mapped to %pa, irq=%i, major=%i, minor=%i\n",
          &fifo->mem->start, &fifo->base_addr, fifo->irq,
          MAJOR(fifo->devt), MINOR(fifo->devt));
 
@@ -1410,11 +1572,16 @@ static int axis_fifo_probe(struct platform_device *pdev)
 err_cdev:
     cdev_del(&fifo->char_device);
 err_dev:
-    device_destroy(axis_fifo_driver_class, fifo->devt);
+    device_destroy(tp3q_driver_class, fifo->devt);
 err_chrdev_region:
     unregister_chrdev_region(fifo->devt, 1);
 err_irq:
     free_irq(fifo->irq, fifo);
+err_pktzr_unmap:
+    iounmap(fifo->pktzr_base_addr);
+err_pktzr_mem:
+    //release_mem_region(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize);
+    release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
 err_unmap:
     iounmap(fifo->base_addr);
 err_mem:
@@ -1432,9 +1599,13 @@ static int axis_fifo_remove(struct platform_device *pdev)
     sysfs_remove_group(&fifo->device->kobj, &axis_fifo_attrs_group);
     cdev_del(&fifo->char_device);
     dev_set_drvdata(fifo->device, NULL);
-    device_destroy(axis_fifo_driver_class, fifo->devt);
+    device_destroy(tp3q_driver_class, fifo->devt);
     unregister_chrdev_region(fifo->devt, 1);
     free_irq(fifo->irq, fifo);
+    iounmap(fifo->pktzr_base_addr);
+    //release_mem_region(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize);
+    release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
+    of_node_put(fifo->pktzr_node);
     iounmap(fifo->base_addr);
     release_mem_region(fifo->mem->start, resource_size(fifo->mem));
     dev_set_drvdata(dev, NULL);
@@ -1442,11 +1613,13 @@ static int axis_fifo_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id axis_fifo_of_match[] = {
-    { .compatible = "xlnx,axi-fifo-mm-s-4.1", },
-    { .compatible = "xlnx,axi-fifo-mm-s-4.2", },
+//    { .compatible = "xlnx,axi-fifo-mm-s-4.1", },
+//    { .compatible = "xlnx,axi-fifo-mm-s-4.2", },
+    { .compatible = "maxiv,tp3q", },
     {},
 };
 MODULE_DEVICE_TABLE(of, axis_fifo_of_match);
+
 
 static struct platform_driver axis_fifo_driver = {
     .driver = {
@@ -1460,11 +1633,11 @@ static struct platform_driver axis_fifo_driver = {
 
 static int __init axis_fifo_init(void)
 {
-    pr_info("axis-fifo driver loaded with parameters read_timeout = %i, write_timeout = %i\n",
+    pr_info("timepix3quad driver loaded with parameters read_timeout = %i, write_timeout = %i\n",
         read_timeout, write_timeout);
-    axis_fifo_driver_class = class_create(THIS_MODULE, DRIVER_NAME);
-    if (IS_ERR(axis_fifo_driver_class))
-        return PTR_ERR(axis_fifo_driver_class);
+    tp3q_driver_class = class_create(THIS_MODULE, DRIVER_NAME);
+    if (IS_ERR(tp3q_driver_class))
+        return PTR_ERR(tp3q_driver_class);
     return platform_driver_register(&axis_fifo_driver);
 }
 
@@ -1473,11 +1646,11 @@ module_init(axis_fifo_init);
 static void __exit axis_fifo_exit(void)
 {
     platform_driver_unregister(&axis_fifo_driver);
-    class_destroy(axis_fifo_driver_class);
+    class_destroy(tp3q_driver_class);
 }
 
 module_exit(axis_fifo_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Jacob Feder <jacobsfeder@gmail.com>");
-MODULE_DESCRIPTION("Xilinx AXI-Stream FIFO v4.1/v4.2 IP core driver");
+MODULE_AUTHOR("Jacob Feder <jacobsfeder@gmail.com> + MaxIV Lab mods");
+MODULE_DESCRIPTION("Timepix 3 Quad Detector Driver");

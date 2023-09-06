@@ -1,5 +1,5 @@
-#ifndef AXIS_FIFO_H
-#define AXIS_FIFO_H
+#ifndef TP3Q_H
+#define TP3Q_H
 
 #include <linux/ioctl.h>
 
