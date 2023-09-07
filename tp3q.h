@@ -56,14 +56,14 @@
  * ------------------------------------------
  */
 
-#define STRGEN_STATUSW_OFFSET        0x00000000  /* Read only - 32 bitfields - status word*/
-#define STRGEN_CONTROLW_OFFSET       0x00000004  /* W(/R) - 32 bitfields - control word */
-#define STRGEN_MODE                  0x00000008  /* W(/R) - uint32 -  */
-#define STRGEN_SEED                  0x0000000C  /* W(/R) - uint32 -  */
-#define STRGEN_LENGTH                0x00000010  /* W(/R) - uint32 -  */
-#define STRGEN_REPETITIONS           0x00000014  /* W(/R) - uint32 -  */
-#define STRGEN_REST                  0x00000018  /* W(/R) - uint32 -  */
-#define STRGEN_COMPLETED_REPETITIONS 0x0000001C  /* Read only - uint32 -  */
+#define STRGEN_STATUSW_OFFSET        0x00000000  /* Read only - 32 bitfields - */
+#define STRGEN_CONTROLW_OFFSET       0x00000004  /* W(/R) - 32 bitfields - */
+#define STRGEN_MODE_OFFSET           0x00000008  /* W(/R) - uint32 -  */
+#define STRGEN_SEED_OFFSET           0x0000000C  /* W(/R) - uint32 -  */
+#define STRGEN_LENGTH_OFFSET         0x00000010  /* W(/R) - uint32 -  in bytes*/
+#define STRGEN_REPETITIONS_OFFSET    0x00000014  /* W(/R) - uint32 -  0 means continuous */
+#define STRGEN_REST_OFFSET           0x00000018  /* W(/R) - uint32 -  in 156.25 MHz clock ticks */
+#define STRGEN_COMPLETED_REPS_OFFSET 0x0000001C  /* Read only - uint32 -  */
 
 
 /* ------------------------------------------

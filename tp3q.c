@@ -564,7 +564,8 @@ static ssize_t statusword_pktzr_show(struct device *dev,
     return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_STATUSW_OFFSET);
 }
 
-static DEVICE_ATTR_RO(statusword_pktzr);
+//static DEVICE_ATTR_RO(statusword_pktzr);
+static struct device_attribute dev_attr_statusword_pktzr = __ATTR(statusword, 0444, statusword_pktzr_show, NULL);
 
 //--------------
 
@@ -580,7 +581,8 @@ static ssize_t controlword_pktzr_show(struct device *dev,
     return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET);
 }
 
-static DEVICE_ATTR_RW(controlword_pktzr);
+//static DEVICE_ATTR_RW(controlword_pktzr);
+static struct device_attribute dev_attr_controlword_pktzr = __ATTR(controlword, 0644, controlword_pktzr_show, controlword_pktzr_store);
 
 //--------------
 
@@ -593,7 +595,7 @@ static ssize_t enabled_store(struct device *dev, struct device_attribute *attr,
 static ssize_t enabled_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET, PKTZR_ENABLE_MASK);
+    return sysfs_read_bit(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET, PKTZR_ENABLE_MASK);
 }
 
 static DEVICE_ATTR_RW(enabled);
@@ -880,7 +882,8 @@ static ssize_t statusword_streamgen_show(struct device *dev,
     return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_STATUSW_OFFSET);
 }
 
-static DEVICE_ATTR_RO(statusword_streamgen);
+//static DEVICE_ATTR_RO(statusword_streamgen);
+static struct device_attribute dev_attr_statusword_streamgen = __ATTR(statusword, 0444, statusword_streamgen_show, NULL);
 
 //--------------
 
@@ -896,25 +899,15 @@ static ssize_t controlword_streamgen_show(struct device *dev,
     return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET);
 }
 
-static DEVICE_ATTR_RW(controlword_streamgen);
+//static DEVICE_ATTR_RW(controlword_streamgen);
+static struct device_attribute dev_attr_controlword_streamgen = __ATTR(controlword, 0644, controlword_streamgen_show, controlword_streamgen_store);
 
 //--------------
 
 static ssize_t generating_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_STATUSW_OFFSET, STRGEN_GENERATING_MASK);
-
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned int read_val;
-    unsigned int len, generating;
-    char tmp[32];
-
-    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_STATUSW_OFFSET);
-    generating=!!(read_val&STRGEN_GENERATING_MASK);
-    len =  snprintf(tmp, sizeof(tmp), "%d\n", generating);
-    memcpy(buf, tmp, len);
-    return len;
+    return sysfs_read_bit(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_STATUSW_OFFSET, STRGEN_GENERATING_MASK);
 }
 
 static DEVICE_ATTR_RO(generating);
@@ -924,36 +917,13 @@ static DEVICE_ATTR_RO(generating);
 static ssize_t start_generation_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned long tmp, regsave;
-    int rc;
-
-    regsave=ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
-    rc = kstrtoul(buf, 0, &tmp);
-    if (rc < 0)
-        return rc;
-
-    if(tmp!=0)
-        iowrite32(regsave | STRGEN_GEN_START_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
-    else
-        iowrite32(regsave & ~STRGEN_GEN_START_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
-
-    return strlen(buf);
+    return sysfs_write_bit(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET, STRGEN_GEN_START_MASK);
 }
 
 static ssize_t start_generation_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned int read_val;
-    unsigned int len, enabled;
-    char tmp[32];
-
-    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
-    enabled=!!(read_val&STRGEN_GEN_START_MASK);
-    len =  snprintf(tmp, sizeof(tmp), "%d\n", enabled);
-    memcpy(buf, tmp, len);
-    return len;
+    return sysfs_read_bit(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET, STRGEN_GEN_START_MASK);
 }
 
 static DEVICE_ATTR_RW(start_generation);
@@ -963,41 +933,155 @@ static DEVICE_ATTR_RW(start_generation);
 static ssize_t stop_generation_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned long tmp, regsave;
-    int rc;
-
-    regsave=ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
-    rc = kstrtoul(buf, 0, &tmp);
-    if (rc < 0)
-        return rc;
-
-    if(tmp!=0)
-        iowrite32(regsave | STRGEN_GEN_STOP_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
-    else
-        iowrite32(regsave & ~STRGEN_GEN_STOP_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
-
-    return strlen(buf);
+    return sysfs_write_bit(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET, STRGEN_GEN_STOP_MASK);
 }
 
 static ssize_t stop_generation_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned int read_val;
-    unsigned int len, enabled;
-    char tmp[32];
-
-    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
-    enabled=!!(read_val&STRGEN_GEN_STOP_MASK);
-    len =  snprintf(tmp, sizeof(tmp), "%d\n", enabled);
-    memcpy(buf, tmp, len);
-    return len;
+    return sysfs_read_bit(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET, STRGEN_GEN_STOP_MASK);
 }
 
 static DEVICE_ATTR_RW(stop_generation);
 
 //--------------
+
+static ssize_t ext_trig_enabled_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write_bit(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET, STRGEN_EXT_TRIG_EN_MASK);
+}
+
+static ssize_t ext_trig_enabled_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read_bit(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET, STRGEN_EXT_TRIG_EN_MASK);
+}
+
+static DEVICE_ATTR_RW(ext_trig_enabled);
+
+//--------------
+
+static ssize_t mode_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_MODE_OFFSET);
+}
+
+static ssize_t mode_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_MODE_OFFSET);
+}
+
+static DEVICE_ATTR_RW(mode);
+
+//--------------
+
+static ssize_t seed_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_SEED_OFFSET);
+}
+
+static ssize_t seed_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_SEED_OFFSET);
+}
+
+static DEVICE_ATTR_RW(seed);
+
+//--------------
+
+static ssize_t streamlen_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_LENGTH_OFFSET);
+}
+
+static ssize_t streamlen_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_LENGTH_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+//static DEVICE_ATTR_RW(streamlen);
+static struct device_attribute dev_attr_streamlen = __ATTR(length, 0644, streamlen_show, streamlen_store);
+
+//--------------
+
+static ssize_t tot_repetitions_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_REPETITIONS_OFFSET);
+}
+
+static ssize_t tot_repetitions_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_REPETITIONS_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(tot_repetitions);
+
+//--------------
+
+static ssize_t rest_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_REST_OFFSET);
+}
+
+static ssize_t rest_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_REST_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(rest);
+
+//--------------
+
+static ssize_t completed_repetitions_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_COMPLETED_REPS_OFFSET);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n",read_val);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RO(completed_repetitions);
 
 //--------------
 
@@ -1008,6 +1092,12 @@ static struct attribute *streamgen_attrs[] = {
     &dev_attr_start_generation.attr,
     &dev_attr_stop_generation.attr,
     &dev_attr_ext_trig_enabled.attr,
+    &dev_attr_mode.attr,
+    &dev_attr_seed.attr,
+    &dev_attr_streamlen.attr,
+    &dev_attr_tot_repetitions.attr,
+    &dev_attr_rest.attr,
+    &dev_attr_completed_repetitions.attr,
     NULL,
 };
 
@@ -1751,7 +1841,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
         rc = -EBUSY;
         goto err_initial;
     }
-    dev_dbg(fifo->dt_device, "got config memory location [%pa - %pa]\n",
+    dev_dbg(fifo->dt_device, "got MM2S FIFO config memory location [%pa - %pa]\n",
         &fifo->mem->start, &fifo->mem->end);
     fifo->fpga_addr = fifo->mem->start;
 
@@ -1762,7 +1852,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
         rc = -ENOMEM;
         goto err_mem;
     }
-    dev_dbg(fifo->dt_device, "remapped config memory to %p\n", fifo->base_addr);
+    dev_dbg(fifo->dt_device, "remapped MM2S FIFO config memory to %p\n", fifo->base_addr);
 
     fifo->tx_pkts = 0;
     fifo->rx_pkts = 0;
@@ -2140,9 +2230,9 @@ err_chrdev_region:
 err_irq:
     free_irq(fifo->irq, fifo);
 err_streamgen_unmap:
-    iounmap(fifo->pktzr_base_addr);
+    iounmap(fifo->streamgen_base_addr);
 err_streamgen_mem:
-    release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
+    release_mem_region(fifo->streamgen_phys_mem.start, resource_size(&fifo->streamgen_phys_mem));
 err_pktzr_unmap:
     iounmap(fifo->pktzr_base_addr);
 err_pktzr_mem:
