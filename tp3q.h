@@ -51,6 +51,32 @@
 #define PKTZR_ENABLE_MASK     0x00000001ul
 
 
+/* ------------------------------------------
+ *     StreamGen register offsets
+ * ------------------------------------------
+ */
+
+#define STRGEN_STATUSW_OFFSET        0x00000000  /* Read only - 32 bitfields - status word*/
+#define STRGEN_CONTROLW_OFFSET       0x00000004  /* W(/R) - 32 bitfields - control word */
+#define STRGEN_MODE                  0x00000008  /* W(/R) - uint32 -  */
+#define STRGEN_SEED                  0x0000000C  /* W(/R) - uint32 -  */
+#define STRGEN_LENGTH                0x00000010  /* W(/R) - uint32 -  */
+#define STRGEN_REPETITIONS           0x00000014  /* W(/R) - uint32 -  */
+#define STRGEN_REST                  0x00000018  /* W(/R) - uint32 -  */
+#define STRGEN_COMPLETED_REPETITIONS 0x0000001C  /* Read only - uint32 -  */
+
+
+/* ------------------------------------------
+ *     StreamGen register bitmasks
+ * ------------------------------------------
+ */
+
+#define STRGEN_GENERATING_MASK     0x00000001ul
+#define STRGEN_GEN_START_MASK      0x00000001ul
+#define STRGEN_GEN_STOP_MASK       0x00000002ul
+#define STRGEN_EXT_TRIG_EN_MASK    0x00000004ul
+
+
 /* ----------------------------
  *     reset register masks
  * ----------------------------

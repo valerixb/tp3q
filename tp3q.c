@@ -119,11 +119,12 @@ struct axis_fifo {
 
     // references to UDP hardware packetizer IP
     struct device_node *pktzr_node;
-    //u64 pktzr_phys_baseaddr, pktzr_phys_end, pktzr_phys_regsize;
     struct resource pktzr_phys_mem; /* physical memory */
     void __iomem *pktzr_base_addr; /* kernel space memory */
 
     // references to Stream Generator IP
+    struct device_node *streamgen_node;
+    struct resource streamgen_phys_mem; /* physical memory */
     void __iomem *streamgen_base_addr; /* kernel space memory */
 
 };
@@ -201,10 +202,84 @@ static ssize_t sysfs_read(struct device *dev, char *buf,
         default:
             subsys_base_addr=NULL;
         }
+
     read_val = ioread32(subsys_base_addr + addr_offset);
     len =  snprintf(tmp, sizeof(tmp), "0x%x\n", read_val);
     memcpy(buf, tmp, len);
 
+    return len;
+}
+
+static ssize_t sysfs_write_bit(struct device *dev, const char *buf, size_t count,
+               int subsys_id, unsigned int addr_offset, unsigned long bitmask)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    void __iomem *subsys_base_addr;
+    unsigned long tmp, regsave;
+    int rc;
+
+    switch(subsys_id)
+        {
+        case TP3Q_TPCMD_SUBSYS:
+            subsys_base_addr=fifo->base_addr;
+            break;
+
+        case TP3Q_PKTZR_SUBSYS:
+            subsys_base_addr=fifo->pktzr_base_addr;
+            break;
+
+        case TP3Q_STREAMGEN_SUBSYS:
+            subsys_base_addr=fifo->streamgen_base_addr;
+            break;
+
+        default:
+            subsys_base_addr=NULL;
+        }
+
+    regsave=ioread32(subsys_base_addr + addr_offset);
+    rc = kstrtoul(buf, 0, &tmp);
+    if (rc < 0)
+        return rc;
+
+    if(tmp!=0)
+        iowrite32(regsave | bitmask, subsys_base_addr + addr_offset);
+    else
+        iowrite32(regsave & ~bitmask, subsys_base_addr + addr_offset);
+
+    return strlen(buf);
+}
+
+static ssize_t sysfs_read_bit(struct device *dev, char *buf,
+              int subsys_id, unsigned int addr_offset, unsigned long bitmask)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    void __iomem *subsys_base_addr;
+    unsigned int read_val;
+    unsigned int len, bitval;
+    char tmp[32];
+
+    switch(subsys_id)
+        {
+        case TP3Q_TPCMD_SUBSYS:
+            subsys_base_addr=fifo->base_addr;
+            break;
+
+        case TP3Q_PKTZR_SUBSYS:
+            subsys_base_addr=fifo->pktzr_base_addr;
+            break;
+
+        case TP3Q_STREAMGEN_SUBSYS:
+            subsys_base_addr=fifo->streamgen_base_addr;
+            break;
+
+        default:
+            subsys_base_addr=NULL;
+        }
+
+    read_val = ioread32(subsys_base_addr + addr_offset);
+    bitval=!!(read_val&bitmask);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n", bitval);
+    memcpy(buf, tmp, len);
     return len;
 }
 
@@ -483,65 +558,42 @@ static const struct attribute_group axis_fifo_attrs_group = {
  * ------------------------------------
  */
 
-static ssize_t statusword_show(struct device *dev,
+static ssize_t statusword_pktzr_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
     return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_STATUSW_OFFSET);
 }
 
-static DEVICE_ATTR_RO(statusword);
+static DEVICE_ATTR_RO(statusword_pktzr);
 
 //--------------
 
-static ssize_t controlword_store(struct device *dev, struct device_attribute *attr,
+static ssize_t controlword_pktzr_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
     return sysfs_write(dev, buf, count, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET);
 }
 
-static ssize_t controlword_show(struct device *dev,
+static ssize_t controlword_pktzr_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
     return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET);
 }
 
-static DEVICE_ATTR_RW(controlword);
+static DEVICE_ATTR_RW(controlword_pktzr);
 
 //--------------
 
 static ssize_t enabled_store(struct device *dev, struct device_attribute *attr,
              const char *buf, size_t count)
 {
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned long tmp, regsave;
-    int rc;
-
-    regsave=ioread32(fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
-    rc = kstrtoul(buf, 0, &tmp);
-    if (rc < 0)
-        return rc;
-
-    if(tmp!=0)
-        iowrite32(regsave | PKTZR_ENABLE_MASK, fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
-    else
-        iowrite32(regsave & ~PKTZR_ENABLE_MASK, fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
-
-    return strlen(buf);
+    return sysfs_write_bit(dev, buf, count, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET, PKTZR_ENABLE_MASK);
 }
 
 static ssize_t enabled_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-    struct axis_fifo *fifo = dev_get_drvdata(dev);
-    unsigned int read_val;
-    unsigned int len, enabled;
-    char tmp[32];
-
-    read_val = ioread32(fifo->pktzr_base_addr + PKTZR_CONTROLW_OFFSET);
-    enabled=!!(read_val&PKTZR_ENABLE_MASK);
-    len =  snprintf(tmp, sizeof(tmp), "%d\n", enabled);
-    memcpy(buf, tmp, len);
-    return len;
+    return sysfs_read(dev, buf, TP3Q_PKTZR_SUBSYS, PKTZR_CONTROLW_OFFSET, PKTZR_ENABLE_MASK);
 }
 
 static DEVICE_ATTR_RW(enabled);
@@ -795,8 +847,8 @@ static DEVICE_ATTR_RW(watchdog_timeout);
 //--------------
 
 static struct attribute *pktzr_attrs[] = {
-    &dev_attr_statusword.attr,
-    &dev_attr_controlword.attr,
+    &dev_attr_statusword_pktzr.attr,
+    &dev_attr_controlword_pktzr.attr,
     &dev_attr_enabled.attr,
     &dev_attr_src_ip.attr,
     &dev_attr_src_mac.attr,
@@ -815,8 +867,165 @@ static const struct attribute_group udp_pktzr_attrs_group = {
 };
 
 
+
+/* ------------------------------------
+ *     sysfs entries for StreamGen
+ * ------------------------------------
+ */
+
+
+static ssize_t statusword_streamgen_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_STATUSW_OFFSET);
+}
+
+static DEVICE_ATTR_RO(statusword_streamgen);
+
+//--------------
+
+static ssize_t controlword_streamgen_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    return sysfs_write(dev, buf, count, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET);
+}
+
+static ssize_t controlword_streamgen_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_CONTROLW_OFFSET);
+}
+
+static DEVICE_ATTR_RW(controlword_streamgen);
+
+//--------------
+
+static ssize_t generating_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    return sysfs_read(dev, buf, TP3Q_STREAMGEN_SUBSYS, STRGEN_STATUSW_OFFSET, STRGEN_GENERATING_MASK);
+
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len, generating;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_STATUSW_OFFSET);
+    generating=!!(read_val&STRGEN_GENERATING_MASK);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n", generating);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RO(generating);
+
+//--------------
+
+static ssize_t start_generation_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long tmp, regsave;
+    int rc;
+
+    regsave=ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
+    rc = kstrtoul(buf, 0, &tmp);
+    if (rc < 0)
+        return rc;
+
+    if(tmp!=0)
+        iowrite32(regsave | STRGEN_GEN_START_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
+    else
+        iowrite32(regsave & ~STRGEN_GEN_START_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
+
+    return strlen(buf);
+}
+
+static ssize_t start_generation_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len, enabled;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
+    enabled=!!(read_val&STRGEN_GEN_START_MASK);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n", enabled);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(start_generation);
+
+//--------------
+
+static ssize_t stop_generation_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned long tmp, regsave;
+    int rc;
+
+    regsave=ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
+    rc = kstrtoul(buf, 0, &tmp);
+    if (rc < 0)
+        return rc;
+
+    if(tmp!=0)
+        iowrite32(regsave | STRGEN_GEN_STOP_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
+    else
+        iowrite32(regsave & ~STRGEN_GEN_STOP_MASK, fifo->pktzr_base_addr + STRGEN_CONTROLW_OFFSET);
+
+    return strlen(buf);
+}
+
+static ssize_t stop_generation_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+    struct axis_fifo *fifo = dev_get_drvdata(dev);
+    unsigned int read_val;
+    unsigned int len, enabled;
+    char tmp[32];
+
+    read_val = ioread32(fifo->streamgen_base_addr + STRGEN_CONTROLW_OFFSET);
+    enabled=!!(read_val&STRGEN_GEN_STOP_MASK);
+    len =  snprintf(tmp, sizeof(tmp), "%d\n", enabled);
+    memcpy(buf, tmp, len);
+    return len;
+}
+
+static DEVICE_ATTR_RW(stop_generation);
+
+//--------------
+
+//--------------
+
+static struct attribute *streamgen_attrs[] = {
+    &dev_attr_statusword_streamgen.attr,
+    &dev_attr_controlword_streamgen.attr,
+    &dev_attr_generating.attr,
+    &dev_attr_start_generation.attr,
+    &dev_attr_stop_generation.attr,
+    &dev_attr_ext_trig_enabled.attr,
+    NULL,
+};
+
+static const struct attribute_group streamgen_attrs_group = {
+    .name = "streamgen_registers",
+    .attrs = streamgen_attrs,
+};
+
+
+//----------------------------------------------------------------------------------
+
 static const struct of_device_id udp_hw_pktzr_of_match[] = {
     { .compatible = "xlnx,UDPpacketizer-1.0", },
+    {},
+};
+
+static const struct of_device_id streamgen_of_match[] = {
+    { .compatible = "xlnx,streamgen-1.0", },
     {},
 };
 
@@ -1559,6 +1768,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
     fifo->rx_pkts = 0;
     fifo->rx_bytes = 0;
     fifo->tx_bytes = 0;
+
     /* ----------------------------
      *          init IP
      * ----------------------------
@@ -1764,7 +1974,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
     if (!request_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem),
                 DRIVER_NAME)) {
         dev_err(fifo->dt_device,
-            "couldn't lock memory region at 0x%pa\n",
+            "couldn't lock memory region at 0x%pa for UDP HW Packetizer\n",
             &fifo->pktzr_phys_mem.start);
         rc = -EBUSY;
         goto err_unmap;
@@ -1783,6 +1993,56 @@ static int axis_fifo_probe(struct platform_device *pdev)
     dev_dbg(fifo->dt_device, "remapped UDP PKTZR config memory to %p\n", fifo->pktzr_base_addr);
 
 
+    /* -----------------------------------------
+     *    get references to Stream Generator
+     * -----------------------------------------
+    */
+    
+    // get node of Stream Generator IP in devicetree
+    fifo->streamgen_node = of_parse_phandle(fifo->dt_device->of_node,"xlnx,streamgen-handle",0);
+    if (!fifo->streamgen_node) {
+        dev_err(fifo->dt_device, "Stream Generator IP not found\n");
+        rc = -ENODEV;
+        goto err_pktzr_unmap;
+    }
+    // check that the node we found is actually a Stream Generator
+    if(!of_match_node(streamgen_of_match,fifo->streamgen_node)) {
+        of_node_put(fifo->streamgen_node);
+        dev_err(fifo->dt_device, "Stream Generator IP has wrong signature\n");
+        rc = -ENODEV;
+        goto err_pktzr_unmap;
+    }
+
+    // get and map registers of Stream Generator
+    if(of_address_to_resource(fifo->streamgen_node, 0, &fifo->streamgen_phys_mem)) {
+        dev_err(fifo->dt_device, "Stream Generator IP has invalid reg entry\n");
+        rc = -ENODEV;
+        goto err_pktzr_unmap;
+    }
+
+    // request Stream Generator physical memory = registers
+    if (!request_mem_region(fifo->streamgen_phys_mem.start, resource_size(&fifo->streamgen_phys_mem),
+                DRIVER_NAME)) {
+        dev_err(fifo->dt_device,
+            "couldn't lock memory region at 0x%pa for Stream Generator IP\n",
+            &fifo->streamgen_phys_mem.start);
+        rc = -EBUSY;
+        goto err_pktzr_unmap;
+    }
+    dev_dbg(fifo->dt_device, "got Stream Generator IP config memory location [%pa - %pa]\n",
+        &fifo->streamgen_phys_mem.start, &fifo->streamgen_phys_mem.end);
+
+
+    /* map physical memory to kernel virtual address space */
+    fifo->streamgen_base_addr = ioremap(fifo->streamgen_phys_mem.start, resource_size(&fifo->streamgen_phys_mem));
+    if (!fifo->streamgen_base_addr) {
+        dev_err(fifo->dt_device, "couldn't map Stream Generator IP physical memory\n");
+        rc = -ENOMEM;
+        goto err_streamgen_mem;
+    }
+    dev_dbg(fifo->dt_device, "remapped Stream Generator IP config memory to %p\n", fifo->streamgen_base_addr);
+
+
     /* ----------------------------
      *    init device interrupts
      * ----------------------------
@@ -1795,7 +2055,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
             dev_err(fifo->dt_device, "no IRQ found for 0x%pa (error %i)\n",
                 &fifo->mem->start, irq);
         rc = irq;
-        goto err_pktzr_unmap;
+        goto err_streamgen_unmap;
     }
 
     /* request IRQ */
@@ -1804,7 +2064,7 @@ static int axis_fifo_probe(struct platform_device *pdev)
     if (rc) {
         dev_err(fifo->dt_device, "couldn't allocate interrupt %i\n",
             fifo->irq);
-        goto err_pktzr_unmap;
+        goto err_streamgen_unmap;
     }
 
     /* ----------------------------
@@ -1858,6 +2118,13 @@ static int axis_fifo_probe(struct platform_device *pdev)
         goto err_cdev;
     }
 
+    /* create StreamGen sysfs entries */
+    rc = sysfs_create_group(&fifo->device->kobj, &streamgen_attrs_group);
+    if (rc < 0) {
+        dev_err(fifo->dt_device, "couldn't register Stream Generator IP sysfs group\n");
+        goto err_cdev;
+    }
+
     dev_info(fifo->dt_device, "axis-fifo created at %pa mapped to %pa, irq=%i, major=%i, minor=%i\n",
          &fifo->mem->start, &fifo->base_addr, fifo->irq,
          MAJOR(fifo->devt), MINOR(fifo->devt));
@@ -1872,10 +2139,13 @@ err_chrdev_region:
     unregister_chrdev_region(fifo->devt, 1);
 err_irq:
     free_irq(fifo->irq, fifo);
+err_streamgen_unmap:
+    iounmap(fifo->pktzr_base_addr);
+err_streamgen_mem:
+    release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
 err_pktzr_unmap:
     iounmap(fifo->pktzr_base_addr);
 err_pktzr_mem:
-    //release_mem_region(fifo->pktzr_phys_baseaddr, fifo->pktzr_phys_regsize);
     release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
 err_unmap:
     iounmap(fifo->base_addr);
@@ -1897,6 +2167,9 @@ static int axis_fifo_remove(struct platform_device *pdev)
     device_destroy(tp3q_driver_class, fifo->devt);
     unregister_chrdev_region(fifo->devt, 1);
     free_irq(fifo->irq, fifo);
+    iounmap(fifo->streamgen_base_addr);
+    release_mem_region(fifo->streamgen_phys_mem.start, resource_size(&fifo->streamgen_phys_mem));
+    of_node_put(fifo->streamgen_node);
     iounmap(fifo->pktzr_base_addr);
     release_mem_region(fifo->pktzr_phys_mem.start, resource_size(&fifo->pktzr_phys_mem));
     of_node_put(fifo->pktzr_node);

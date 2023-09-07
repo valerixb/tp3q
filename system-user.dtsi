@@ -12,6 +12,7 @@
 	TP_CMD_axi_fifo_mm_s_0: axi_fifo_mm_s@80040000 {
 		compatible = "maxiv,tp3q";
 		xlnx,pktzr-handle = <&HW10GEth_UDPpacketizer_0>;
+		xlnx,streamgen-handle = <&HW10GEth_streamgen_0>;
 		xlnx,tx-max-pkt-size = <49158>; 
 		xlnx,rx-min-pkt-size = <6>; 
 	};
