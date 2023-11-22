@@ -1,11 +1,11 @@
-#ifndef AXIS_FIFO_H
-#define AXIS_FIFO_H
+#ifndef TP3Q_H
+#define TP3Q_H
 
 #include <linux/ioctl.h>
 
-/* ----------------------------
- *     IP register offsets
- * ----------------------------
+/* ------------------------------------------
+ *     TPCMD MM2S FIFO register offsets
+ * ------------------------------------------
  */
 
 #define XLLF_ISR_OFFSET  0x00000000  /* Interrupt Status */
@@ -23,6 +23,58 @@
 #define XLLF_SRR_OFFSET  0x00000028  /* Local Link Reset */
 #define XLLF_TDR_OFFSET  0x0000002C  /* Transmit Destination */
 #define XLLF_RDR_OFFSET  0x00000030  /* Receive Destination */
+
+
+/* ------------------------------------------
+ *     UDP PKTZR register offsets
+ * ------------------------------------------
+ */
+
+#define PKTZR_STATUSW_OFFSET       0x00000000  /* Read only - 32 bitfields - unused*/
+#define PKTZR_CONTROLW_OFFSET      0x00000004  /* W(/R) - 32 bitfields - control word */
+#define PKTZR_SRC_IP_OFFSET        0x00000008  /* W(/R) - uint32 - Source IP address */
+#define PKTZR_SRC_MAC_LO_OFFSET    0x0000000C  /* W(/R) - uint32 - 32 LSBs of Source MAC */
+#define PKTZR_SRC_MAC_HI_OFFSET    0x00000010  /* W(/R) - uint16 - 16 MSBs of Source MAC */
+#define PKTZR_SRC_UDP_PORT_OFFSET  0x00000014  /* W(/R) - uint32 - Source UDP port # */
+#define PKTZR_DEST_IP_OFFSET       0x00000018  /* W(/R) - uint32 - Destination IP address */
+#define PKTZR_DEST_MAC_LO_OFFSET   0x0000001C  /* W(/R) - uint32 - 32 LSBs of Destination MAC */
+#define PKTZR_DEST_MAC_HI_OFFSET   0x00000020  /* W(/R) - uint16 - 16 MSBs of Destination MAC */
+#define PKTZR_DEST_UDP_PORT_OFFSET 0x00000024  /* W(/R) - uint32 - Destination UDP port # */
+#define PKTZR_WDOG_TIMEOUT_OFFSET  0x00000028  /* W(/R) - uint32 - Watchdog timeout in 156.25 MHz clock ticks */
+
+
+/* ------------------------------------------
+ *     UDP PKTZR register bitmasks
+ * ------------------------------------------
+ */
+
+#define PKTZR_ENABLE_MASK     0x00000001ul
+
+
+/* ------------------------------------------
+ *     StreamGen register offsets
+ * ------------------------------------------
+ */
+
+#define STRGEN_STATUSW_OFFSET        0x00000000  /* Read only - 32 bitfields - */
+#define STRGEN_CONTROLW_OFFSET       0x00000004  /* W(/R) - 32 bitfields - */
+#define STRGEN_MODE_OFFSET           0x00000008  /* W(/R) - uint32 -  */
+#define STRGEN_SEED_OFFSET           0x0000000C  /* W(/R) - uint32 -  */
+#define STRGEN_LENGTH_OFFSET         0x00000010  /* W(/R) - uint32 -  in bytes*/
+#define STRGEN_REPETITIONS_OFFSET    0x00000014  /* W(/R) - uint32 -  0 means continuous */
+#define STRGEN_REST_OFFSET           0x00000018  /* W(/R) - uint32 -  in 156.25 MHz clock ticks */
+#define STRGEN_COMPLETED_REPS_OFFSET 0x0000001C  /* Read only - uint32 -  */
+
+
+/* ------------------------------------------
+ *     StreamGen register bitmasks
+ * ------------------------------------------
+ */
+
+#define STRGEN_GENERATING_MASK     0x00000001ul
+#define STRGEN_GEN_START_MASK      0x00000001ul
+#define STRGEN_GEN_STOP_MASK       0x00000002ul
+#define STRGEN_EXT_TRIG_EN_MASK    0x00000004ul
 
 
 /* ----------------------------
@@ -84,5 +136,17 @@ struct axis_fifo_kern_regInfo{
 #define AXIS_FIFO_GET_TX_BYTES_SENT _IOR(AXIS_FIFO_IOCTL_MAGIC, 11, uint32_t)
 #define AXIS_FIFO_GET_RX_PKTS_READ _IOR(AXIS_FIFO_IOCTL_MAGIC, 12, uint32_t)
 #define AXIS_FIFO_GET_RX_BYTES_READ _IOR(AXIS_FIFO_IOCTL_MAGIC, 13, uint32_t)
+
+
+/* ----------------------------
+ *      subsys identifiers
+ * ----------------------------
+ */
+
+#define TP3Q_TPCMD_SUBSYS     1
+#define TP3Q_PKTZR_SUBSYS     2
+#define TP3Q_STREAMGEN_SUBSYS 3
+
+
 
 #endif /* AXIS_FIFO_H */

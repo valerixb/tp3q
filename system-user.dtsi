@@ -1,0 +1,37 @@
+/include/ "system-conf.dtsi"
+/ {
+};
+
+&amba_pl {
+	HW10GEth_axi_mcdma_0: axi_mcdma@80000000 {
+		compatible = "xlnx,eth-dma";
+		xlnx,addrwidth = /bits/ 8 <0x40>;
+		/delete-node/ dma-channel@80000000;
+		/delete-node/ dma-channel@80000030;
+	};
+	TP_CMD_axi_fifo_mm_s_0: axi_fifo_mm_s@80040000 {
+		compatible = "maxiv,tp3q";
+		xlnx,pktzr-handle = <&HW10GEth_UDPpacketizer_0>;
+		xlnx,streamgen-handle = <&HW10GEth_streamgen_0>;
+		xlnx,tx-max-pkt-size = <49158>; 
+		xlnx,rx-min-pkt-size = <6>; 
+	};
+};
+
+&i2c1 {
+   i2c-mux@74 {
+      i2c@2 {
+         si570_1: clock-generator@5d { /* USER SI570 - u42 */
+      //       status = "disabled";
+             clock-frequency = <160000000>;
+         };
+      };
+      i2c@3 {
+         si570_2: clock-generator@5d { /* USER MGT SI570 - u56 */
+             status = "disabled";
+             /* clock-frequency = <156250000>; */
+         };
+      };
+   };
+};
+
