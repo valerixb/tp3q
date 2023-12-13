@@ -77,6 +77,14 @@
 #define STRGEN_EXT_TRIG_EN_MASK    0x00000004ul
 
 
+/* -------------------------------------------
+ *     receive destination register masks
+ * -------------------------------------------
+ */
+
+#define XLLF_RDR_RDEST_MASK        0x0000000F /* value of TDEST of next packet to be read */
+
+
 /* ----------------------------
  *     reset register masks
  * ----------------------------
