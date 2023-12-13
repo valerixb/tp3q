@@ -9,7 +9,7 @@
  * See Xilinx PG080 document for IP details:
  * https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/AXI4-Stream-FIFO-LogiCORE-IP-Product-Guide
  * 
- * latest rev by valerix, sept 6 2023
+ * latest rev by valerix, nov 24 2023
  * 
  */
 
@@ -1183,7 +1183,8 @@ static ssize_t axis_fifo_read(struct file *f, char __user *buf,
     struct axis_fifo *fifo = (struct axis_fifo *)f->private_data;
     size_t bytes_available;
     unsigned int words_available;
-        unsigned int leftover;
+    unsigned int leftover;
+    unsigned int tpID;
     unsigned int copied;
     unsigned int copy;
     unsigned int i;
@@ -1232,6 +1233,9 @@ static ssize_t axis_fifo_read(struct file *f, char __user *buf,
         return -EIO;
     }
 
+    // I'll add 1 word with the number of the timepix that transmitted the data
+    bytes_available += sizeof(u32);
+
     if (bytes_available > len) {
         dev_err(fifo->dt_device, "user read buffer too small (available bytes=%zu user buffer bytes=%zu) - fifo core will be reset\n",
             bytes_available, len);
@@ -1260,7 +1264,20 @@ static ssize_t axis_fifo_read(struct file *f, char __user *buf,
     /* read data into an intermediate buffer, copying the contents
      * to userspace when the buffer is full
      */
-    copied = 0;
+
+    // first word is the number of the timepix that transmitted the data = TDEST of the bus,
+    // which is stored by the MM2S FIFO into RDR = receive destination register
+    tmp_buf[0]=ioread32(fifo->base_addr + XLLF_RDR_OFFSET) & XLLF_RDR_RDEST_MASK;
+    if (copy_to_user(buf, tmp_buf, sizeof(u32))) {
+            reset_ip_core(fifo);
+            return -EFAULT;
+        }
+
+    copied = 1;
+    words_available--;
+
+    // now copy actual received data
+
     while (words_available > 0) {
         copy = min(words_available, READ_BUF_SIZE);
 
