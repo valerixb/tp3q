@@ -9,7 +9,7 @@
  * See Xilinx PG080 document for IP details:
  * https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/AXI4-Stream-FIFO-LogiCORE-IP-Product-Guide
  * 
- * latest rev by valerix, dec 15 2023
+ * latest rev by valerix, apr 17 2024
  * 
  */
 
@@ -1268,7 +1268,11 @@ static ssize_t axis_fifo_read(struct file *f, char __user *buf,
 
     // first word is the number of the timepix that transmitted the data = TDEST of the bus,
     // which is stored by the MM2S FIFO into RDR = receive destination register
-    tmp_buf[0]=cpu_to_be32(ioread32(fifo->base_addr + XLLF_RDR_OFFSET) & XLLF_RDR_RDEST_MASK);
+    tmp_buf[0]=
+      cpu_to_be32(
+        ((ioread32(fifo->base_addr + XLLF_RDR_OFFSET) & XLLF_RDR_RDEST_MASK) & 0x000000FF) |
+        (((bytes_available - sizeof(u32)) & 0x0000FFFF) << 8)
+        );
     if (copy_to_user(buf, tmp_buf, sizeof(u32))) {
             reset_ip_core(fifo);
             return -EFAULT;
